@@ -15,17 +15,17 @@
 #include "esp_log.h"
 #include "esp_intr_alloc.h"
 #include "driver/gpio.h"
-#include "usb/usb_host.h"
 #include "driver/uart.h"
+#include "usb/usb_host.h"
 
-#include "lcd.h"
+#include <M5GFX.h>
 
 #define UART_PORT_NUM      UART_NUM_1  // UART1
 
-#define UART_RX_PIN	5
-#define UART_TX_PIN	6
-#define TRIG		7
-#define LED			8
+#define UART_RX_PIN	(gpio_num_t)5
+#define UART_TX_PIN	(gpio_num_t)6
+#define TRIG		(gpio_num_t)7
+#define LED			(gpio_num_t)8
 
 #include "PTPDef.h"
 
@@ -559,7 +559,10 @@ static int updateDeviceProp(int onlyDiff)
 #define BUF_SIZE  1024
 uint8_t uart_buf[BUF_SIZE];
 
-void app_main(void)
+M5GFX display;
+M5Canvas canvas(&display);
+
+extern "C" void app_main(void)
 {
 	usb_host_init();
 
@@ -603,11 +606,14 @@ void app_main(void)
 
 	int i;
 
-	#define BACKGROUND_COLOR 0x0000
+    display.begin();
+    canvas.createSprite(128, 128);
+    canvas.setTextSize(2);
+    canvas.setTextColor(TFT_WHITE);
 
-    lcd_init();
-    draw_fill(BACKGROUND_COLOR);
-    draw_string(0, 10, "connecting", 0xffff, BACKGROUND_COLOR, 2);
+    canvas.fillScreen(TFT_BLACK);
+    canvas.drawString("connecting", 10, 10);
+    canvas.pushSprite(0, 0);
 
 	while(g_driver_obj.dev_hdl == NULL)
 		vTaskDelay(100);
@@ -638,7 +644,9 @@ void app_main(void)
 	updateDeviceProp(false);
 
 	ESP_LOGI(TAG, "start loop\n");
-	draw_string(0, 10, "ready     ", 0xffff, BACKGROUND_COLOR, 2);
+    canvas.fillScreen(TFT_BLACK);
+    canvas.drawString("ready", 10, 10);
+    canvas.pushSprite(0, 0);
 
 	int32_t cnt_last[PARAM_NUM] = {0};
 	int32_t cnt_cur[PARAM_NUM] = {0};
@@ -658,8 +666,9 @@ void app_main(void)
 					buf[1+i*2+1] = uart_buf[i];
 				}
 				usb_ptp_transfer(PTP_OC_SDIOSetExtDevicePropValue, 1, DPC_IMAGEID_STRING,0,0,0,0, buf,(len+1)*2+1, NULL,NULL);
-			    draw_fill(BACKGROUND_COLOR);
-			    draw_string(0, 10, (char*)uart_buf, 0xffff, BACKGROUND_COLOR, 2);
+			    canvas.fillScreen(TFT_BLACK);
+			    canvas.drawString((char*)uart_buf, 10, 10);
+			    canvas.pushSprite(0, 0);
 			}
 		}
 
