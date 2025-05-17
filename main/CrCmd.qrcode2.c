@@ -16,8 +16,9 @@
 #include "esp_intr_alloc.h"
 #include "driver/gpio.h"
 #include "usb/usb_host.h"
-
 #include "driver/uart.h"
+
+#include "lcd.h"
 
 #define UART_PORT_NUM      UART_NUM_1  // UART1
 
@@ -602,6 +603,12 @@ void app_main(void)
 
 	int i;
 
+	#define BACKGROUND_COLOR 0x0000
+
+    lcd_init();
+    draw_fill(BACKGROUND_COLOR);
+    draw_string(0, 10, "connecting", 0xffff, BACKGROUND_COLOR, 2);
+
 	while(g_driver_obj.dev_hdl == NULL)
 		vTaskDelay(100);
 	vTaskDelay(50);
@@ -631,6 +638,7 @@ void app_main(void)
 	updateDeviceProp(false);
 
 	ESP_LOGI(TAG, "start loop\n");
+	draw_string(0, 10, "ready     ", 0xffff, BACKGROUND_COLOR, 2);
 
 	int32_t cnt_last[PARAM_NUM] = {0};
 	int32_t cnt_cur[PARAM_NUM] = {0};
@@ -645,9 +653,13 @@ void app_main(void)
 
 			if((len+1)*2+1 < sizeof(buf)) {
 				buf[0] = len+1;
-				for(i = 0; i < len+1; i++)
-					((uint16_t*)(buf+1))[i] = uart_buf[i];
+				for(i = 0; i < len+1; i++) {
+					buf[1+i*2+0] = 0;
+					buf[1+i*2+1] = uart_buf[i];
+				}
 				usb_ptp_transfer(PTP_OC_SDIOSetExtDevicePropValue, 1, DPC_IMAGEID_STRING,0,0,0,0, buf,(len+1)*2+1, NULL,NULL);
+			    draw_fill(BACKGROUND_COLOR);
+			    draw_string(0, 10, (char*)uart_buf, 0xffff, BACKGROUND_COLOR, 2);
 			}
 		}
 
