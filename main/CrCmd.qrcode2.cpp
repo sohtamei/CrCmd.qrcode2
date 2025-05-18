@@ -37,7 +37,7 @@ static const char *TAG = "DAEMON";
 
 #define CLIENT_NUM_EVENT_MSG    5
 
-#define PARAM_NUM  5
+#define PARAM_NUM  0
 
 struct _Param {
 	uint16_t pcode;
@@ -52,11 +52,7 @@ struct _Param {
 	int32_t  currentIndex;
 	uint32_t led;
 } paramTable[PARAM_NUM] = {
-	{DPC_SHUTTER_SPEED,			0,0,0,0,0,NULL,0,0,0},
-	{DPC_FNUMBER,				0,0,0,0,0,NULL,0,0,0},
-	{DPC_EXPOSURE_COMPENSATION,	0,0,0,0,0,NULL,0,0,0},
-	{DPC_ISO,					0,0,0,0,0,NULL,0,0,0},
-	{DPC_EXPOSURE_MODE,			0,0,0,0,0,NULL,0,0,0},
+//	{DPC_EXPOSURE_MODE,			0,0,0,0,0,NULL,0,0,0},
 };
 
 #define TIMEOUT_MS 100
@@ -67,7 +63,7 @@ struct _Param {
 #define GetL32(buf) (((buf)[0]<<0)|((buf)[1]<<8)|((buf)[2]<<16)|((buf)[3]<<24))
 #define GetL16(buf) (((buf)[0]<<0)|((buf)[1]<<8))
 
-#define numof(a) (sizeof(a)/sizeof((a)[0]))
+//#define numof(a) (sizeof(a)/sizeof((a)[0]))
 
 bool validateBarcode(const uint8_t* barcode, int length);
 
@@ -392,50 +388,6 @@ static int usb_ptp_transfer(uint32_t pcode,
 
 //-------------------- client ------------------
 
-int incParam(int index, int diff)
-{
-	if(paramTable[index].isenabled != 1) return -1;
-
-	int currentIndex = paramTable[index].currentIndex + diff;
-	if(currentIndex < 0)
-		currentIndex = 0;
-
-	if(currentIndex > paramTable[index].enumNum-1)
-		currentIndex = paramTable[index].enumNum-1;
-
-	if(paramTable[index].currentIndex == currentIndex) return 0;
-
-	paramTable[index].currentIndex = currentIndex;
-
-	int32_t data = paramTable[index].enums[currentIndex];
-	int size = 0;
-	uint8_t buf[8]; 
-
-	switch(paramTable[index].datatype) {
-	case PTP_DT_INT8:
-	case PTP_DT_UINT8:
-		buf[0] = data;
-		size = 1;
-		break;
-
-	case PTP_DT_INT16:
-	case PTP_DT_UINT16:
-		SetL32(buf, data);
-		size = 2;
-		break;
-
-	case PTP_DT_INT32:
-	case PTP_DT_UINT32:
-		SetL32(buf, data);
-		size = 4;
-		break;
-
-	default:
-		return -1;
-	}
-	return usb_ptp_transfer(PTP_OC_SDIOSetExtDevicePropValue, 1, paramTable[index].pcode,0,0,0,0, buf,size, NULL,NULL);
-}
-
 int32_t getVariableVal(int datatype, uint8_t** dpp)
 {
 	int32_t val = 0;
@@ -606,6 +558,7 @@ extern "C" void app_main(void)
 
 	int i;
 
+	// display
     display.begin();
     canvas.createSprite(128, 128);
     canvas.setTextSize(2);
@@ -648,13 +601,11 @@ extern "C" void app_main(void)
     canvas.drawString("ready", 10, 10);
     canvas.pushSprite(0, 0);
 
-	int32_t cnt_last[PARAM_NUM] = {0};
-	int32_t cnt_cur[PARAM_NUM] = {0};
-
 	int ret = 0;
 	(void)ret;
 
 	while(1) {
+		// qrcode2
 		int len = uart_read_bytes(UART_PORT_NUM, uart_buf, BUF_SIZE, 100 / portTICK_PERIOD_MS);
 		if (len > 0) {
 			ESP_LOGI(TAG, "Received %d bytes: '%.*s', status=%d", len, len, uart_buf, validateBarcode(uart_buf, len));
@@ -677,15 +628,6 @@ extern "C" void app_main(void)
 			updateDeviceProp(true);
 		}
 
-		for(i = 0; i < PARAM_NUM; i++) {
-			int diff = cnt_cur[i] - cnt_last[i];
-		//	if(diff < 0) diff += 1;
-			diff = diff>>1;
-			if(diff) {
-				incParam(i, diff);
-				cnt_last[i] = cnt_cur[i] & ~1;
-			}
-		}
 		vTaskDelay(5);
 	}
 
@@ -703,52 +645,6 @@ extern "C" void app_main(void)
 	vTaskDelete(daemon_task_hdl);
 }
 
-/*
-esp_err_t usb_control_transfer(void)
-{
-	ESP_LOGI(TAG, "setconfig1");
-	usb_transfer_t *transfer;
-	
-	ESP_ERROR_CHECK(usb_host_transfer_alloc(USB_SETUP_PACKET_SIZE+2, 0, &transfer));
-	//ESP_ERROR_CHECK(usb_host_transfer_alloc(BULK_PACKET_SIZE, 0, &transfer));
-
-	transfer->device_handle = g_driver_obj.dev_hdl;
-	transfer->callback = xfer_cb;
-	transfer->context = NULL;
-	transfer->bEndpointAddress = 0;
-	transfer->timeout_ms = TIMEOUT_MS;
-
-
-	transfer->num_bytes = USB_SETUP_PACKET_SIZE+2;
-  //uint8_t tmp[8] = {0x00,0x09,0x01,0x00,0x00,0x00,0x00,0x00};
-	uint8_t tmp[8] = {0x80,0x00,0x00,0x00,0x00,0x00,0x02,0x00};
-	memcpy(transfer->data_buffer, tmp, 8);
-
-	ESP_ERROR_CHECK(usb_host_transfer_submit_control(g_driver_obj.client_hdl, transfer));
-
-	BaseType_t received = xSemaphoreTake(sem_class, pdMS_TO_TICKS(100));
-	if(received != pdTRUE) {
-		ESP_LOGE(TAG, "Control Transfer Timeout");
-		return ESP_ERR_TIMEOUT;
-	}
-
-	transfer->num_bytes = 8;
-	uint8_t tmp2[8] = {0x00,0x09,0x01,0x00,0x00,0x00,0x00,0x00};
-	memcpy(transfer->data_buffer, tmp2, 8);
-
-	ESP_ERROR_CHECK(usb_host_transfer_submit_control(g_driver_obj.client_hdl, transfer));
-
-	received = xSemaphoreTake(sem_class, pdMS_TO_TICKS(100));
-	if(received != pdTRUE) {
-		ESP_LOGE(TAG, "Control Transfer Timeout");
-		return ESP_ERR_TIMEOUT;
-	}
-	ESP_LOGI(TAG, "setconfig3");
-	usb_host_transfer_free(transfer);
-
-	return ESP_OK;
-}
-*/
 
 bool validateBarcode(const uint8_t* barcode, int length)
 {
